@@ -1,0 +1,14 @@
+# Python virtual environment
+/venv/
+
+# Firebase Admin SDK credentials
+/firebase-admin-sdk.json
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
