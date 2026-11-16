@@ -1,8 +1,10 @@
 import json
+import re
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pathlib import Path
 from app.core.firebase import db
+from app.schemas.location import Location, LocationListResponse, LocationResponse, LocationCreate
 
 SEED_FILE = Path(__file__).parent / "data" / "locations.seed.json"
 SEED_LOCATIONS = json.loads(SEED_FILE.read_text())
@@ -63,11 +65,11 @@ def active_locations() -> list[dict]:
     return sort_locations(locations) or FALLBACK_LOCATIONS
 
 
-@app.get("/api/locations")
+@app.get("/api/locations", response_model=LocationListResponse)
 def get_locations():
     return {"success": True, "locations": active_locations()}
 
-@app.get("/api/locations/search")
+@app.get("/api/locations/search", response_model=LocationListResponse)
 def search_locations(
     q: str = "",
     limit: int | None = Query(None, ge=1, le=100),
@@ -85,7 +87,7 @@ def search_locations(
         results = results[:limit]
     return {"success": True, "locations": results}
 
-@app.get("/api/locations/{location_id}")
+@app.get("/api/locations/{location_id}", response_model=LocationResponse)
 def get_location(location_id: str):
     key = location_id.lower()
     doc = db.collection(COLLECTION).document(key).get()
@@ -98,3 +100,10 @@ def get_location(location_id: str):
         if loc["name"].lower() == key:
             return {"success": True, "location": loc}
     raise HTTPException(status_code=404, detail="Location not found")
+
+
+@app.post("/api/locations/preview", response_model=LocationResponse)
+def preview_location(body: LocationCreate):
+    location_id = re.sub(r"\s+", "-", (body.id or body.name).strip().lower())
+    location = Location(id=location_id, **body.model_dump(exclude={"id"}))
+    return {"success": True, "location": location}
