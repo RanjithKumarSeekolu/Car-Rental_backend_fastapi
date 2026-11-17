@@ -1,7 +1,7 @@
 import json
 
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import auth, credentials, firestore
 
 from app.core.config import settings
 
@@ -20,3 +20,4 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(_load_credentials(), options)
 
 db = firestore.client()
+fb_auth = auth

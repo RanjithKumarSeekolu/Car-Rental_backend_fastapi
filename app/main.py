@@ -3,8 +3,11 @@ import re
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pathlib import Path
+
+from firebase_admin import firestore
 from app.core.firebase import db
 from app.schemas.location import Location, LocationListResponse, LocationResponse, LocationCreate
+from app.api.deps import AdminUser, CurrentUser
 
 SEED_FILE = Path(__file__).parent / "data" / "locations.seed.json"
 SEED_LOCATIONS = json.loads(SEED_FILE.read_text())
@@ -65,6 +68,12 @@ def active_locations() -> list[dict]:
     return sort_locations(locations) or FALLBACK_LOCATIONS
 
 
+
+@app.get("/api/me")
+def me(user: CurrentUser):
+    return user
+
+
 @app.get("/api/locations", response_model=LocationListResponse)
 def get_locations():
     return {"success": True, "locations": active_locations()}
@@ -87,20 +96,22 @@ def search_locations(
         results = results[:limit]
     return {"success": True, "locations": results}
 
-@app.get("/api/locations/{location_id}", response_model=LocationResponse)
-def get_location(location_id: str):
-    key = location_id.lower()
-    doc = db.collection(COLLECTION).document(key).get()
+@app.post("/api/locations", response_model=LocationResponse, status_code=201)
+def create_location(body: LocationCreate, admin: AdminUser):
+    location_id = re.sub(r"\s+", "-", (body.id or body.name).strip().lower())
+    ref = db.collection(COLLECTION).document(location_id)
 
-    if doc.exists:
-        location = to_public_location(doc.id, doc.to_dict())
-        return {"success": True, "location": location}
-    
-    for loc in active_locations():
-        if loc["name"].lower() == key:
-            return {"success": True, "location": loc}
-    raise HTTPException(status_code=404, detail="Location not found")
+    if ref.get().exists:
+        raise HTTPException(409, "Location already exists")
 
+    location = Location(id=location_id, **body.model_dump(exclude={"id"}))
+    ref.set({
+        **location.model_dump(by_alias=True, exclude={"id"}),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+        "createdBy": admin.uid,
+    })
+    return {"success": True, "location": location}
 
 @app.post("/api/locations/preview", response_model=LocationResponse)
 def preview_location(body: LocationCreate):
