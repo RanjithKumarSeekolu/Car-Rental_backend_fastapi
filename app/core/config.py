@@ -6,5 +6,6 @@ class Settings(BaseSettings):
   firebase_service_account_json: str = ""
   firebase_credentials_path: str = "firebase-admin-sdk.json"
   firebase_storage_bucket: str = ""
+  cors_origin: str = ""
 
 settings = Settings()

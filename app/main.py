@@ -1,10 +1,13 @@
 import json
 import re
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pathlib import Path
 
 from firebase_admin import firestore
+from app.core.config import settings    
+from app.core.exceptions import register_exception_handlers 
 from app.core.firebase import db
 from app.schemas.location import Location, LocationListResponse, LocationResponse, LocationCreate
 from app.api.deps import AdminUser, CurrentUser
@@ -14,6 +17,25 @@ SEED_LOCATIONS = json.loads(SEED_FILE.read_text())
 COLLECTION = "locations"
 
 app = FastAPI(title="RentNHost API")
+
+register_exception_handlers(app)
+
+ALLOWED_ORIGINS = [
+    "http://localhost:1234",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+]
+
+extra_origins = [o.strip() for o in settings.cors_origin.split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS + extra_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/", response_class=PlainTextResponse)
 def root():
@@ -78,6 +100,21 @@ def me(user: CurrentUser):
 def get_locations():
     return {"success": True, "locations": active_locations()}
 
+@app.get("/api/locations/{location_id}", response_model=LocationResponse)
+def get_location(location_id: str):
+    key = location_id.lower()
+    doc = db.collection(COLLECTION).document(key).get()
+
+    if doc.exists:
+        location = to_public_location(doc.id, doc.to_dict())
+        return {"success": True, "location": location}
+
+    for loc in active_locations():
+        if loc["name"].lower() == key:
+            return {"success": True, "location": loc}
+
+    raise HTTPException(status_code=404, detail="Location not found")
+
 @app.get("/api/locations/search", response_model=LocationListResponse)
 def search_locations(
     q: str = "",
@@ -113,8 +150,3 @@ def create_location(body: LocationCreate, admin: AdminUser):
     })
     return {"success": True, "location": location}
 
-@app.post("/api/locations/preview", response_model=LocationResponse)
-def preview_location(body: LocationCreate):
-    location_id = re.sub(r"\s+", "-", (body.id or body.name).strip().lower())
-    location = Location(id=location_id, **body.model_dump(exclude={"id"}))
-    return {"success": True, "location": location}
